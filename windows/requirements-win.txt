@@ -1,0 +1,24 @@
+# Windows 环境依赖。torch / torchvision 由 setup_env.ps1 按 CUDA 轮子单独安装。
+# triton==3.1.0 仅用于 Linux 上的推理融合核，训练入口不导入它，Windows 上不安装。
+bitsandbytes==0.43.3
+datasets==3.0.0
+evaluate==0.4.3
+fire==0.6.0
+huggingface_hub==0.31.2
+matplotlib==3.9.2
+numpy==1.23.5
+packaging==25.0
+pandas==2.2.3
+peft==0.12.0
+pydantic==2.11.4
+safetensors==0.5.3
+scikit_learn==1.6.1
+scipy==1.10.0
+seaborn==0.13.2
+tiktoken==0.7.0
+tqdm==4.66.5
+transformers==4.44.0
+pywavelets==1.6.0
+accelerate==0.34.2
+sentencepiece==0.2.0
+protobuf==5.28.1

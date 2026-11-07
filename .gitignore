@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.conda/
+
+# Models & large runtime artifacts (keep on experiment machine disk)
+models/
+output/
+trigger_save/
+soft_model/
+*.bin
+*.safetensors
+*.pt
+!tests/fixtures/**
+
+# Logs & local env
+logs/
+*.log
+.env
+.HF_HOME/
+wandb/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Archives
+*.zip
+windows.zip
