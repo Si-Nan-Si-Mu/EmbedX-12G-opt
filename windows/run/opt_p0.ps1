@@ -1,5 +1,5 @@
 ﻿# Route-2 P0/P1 helper for the experiment machine.
-# Requires existing Step0–2 artifacts (checkpoint-400 is OK).
+# Prefer soft_model_full (ckpt-468) when present; O5 matches the verified Step2b recipe.
 param(
     [string]$Py = "D:\EmbedX_env\conda-env\python.exe",
     [string]$Repo = "",
@@ -7,10 +7,12 @@ param(
     [string]$OutputDir = "D:\EmbedX_env\output",
     [string]$TriggerDir = "D:\EmbedX_env\trigger_save",
     [string]$SoftDir = "D:\EmbedX_env\soft_model",
+    [string]$SoftFullDir = "D:\EmbedX_env\soft_model_full",
     [string]$LogDir = "D:\EmbedX_env\logs",
     [int]$MaxTest = 100,
     [string]$ResumeCkpt = "",
-    [ValidateSet("o2", "o1", "o4", "o5", "all")]
+    [int]$ResumeMaxSteps = 68,
+    [ValidateSet("o2", "o1", "o3", "o4", "o5", "all")]
     [string]$Only = "all"
 )
 
@@ -24,6 +26,13 @@ $Phi = Get-ChildItem "$TriggerDir\bloom_sst2\trigger_phi_epoch_*.pt" -ErrorActio
     Sort-Object Name | Select-Object -Last 1
 if (-not $Phi) { throw "trigger_phi not found under $TriggerDir\bloom_sst2" }
 
+# Prefer ckpt-468 fused model for benches / S3 baseline when available
+$S3Dir = $SoftDir
+if (Test-Path (Join-Path $SoftFullDir "soft_model_bloom_sst2")) {
+    $S3Dir = $SoftFullDir
+    Write-Host "Using soft_model_full (checkpoint-468) as S3 baseline" -ForegroundColor Green
+}
+
 if ($Only -in @("all", "o2")) {
     Write-Host "==== O2 merge clean LoRA ====" -ForegroundColor Cyan
     & $Py tools\merge_clean_lora.py `
@@ -32,7 +41,7 @@ if ($Only -in @("all", "o2")) {
         --trigger_type clean --save_directory $SoftDir --run_tag clean `
         --merge_dtype fp16 2>&1 | Tee-Object "$LogDir\opt_o2_merge_clean.log"
 
-    Write-Host "==== O2 eval clean CTA ====" -ForegroundColor Cyan
+    Write-Host "==== O2 eval clean CTA (+ FTR_A) ====" -ForegroundColor Cyan
     & $Py backdoor_eval.py `
         --model_name_or_path $ModelRoot --save_directory $SoftDir `
         --trigger_dir $TriggerDir --adapter_path $OutputDir `
@@ -40,6 +49,18 @@ if ($Only -in @("all", "o2")) {
         --max_test_samples $MaxTest --trigger_type token --merged `
         --run_tag clean --trigger_list mn 2>&1 |
         Tee-Object "$LogDir\opt_o2_eval_clean.log"
+}
+
+# O3 is the FTR_A code path itself; re-eval existing S3 model to print FTR_A
+if ($Only -in @("all", "o3")) {
+    Write-Host "==== O3 re-eval S3 with FTR_A ====" -ForegroundColor Cyan
+    & $Py backdoor_eval.py `
+        --model_name_or_path $ModelRoot --save_directory $S3Dir `
+        --trigger_dir $TriggerDir --adapter_path $OutputDir `
+        --model bloom --dataset sst2 --target_output Negative `
+        --max_test_samples $MaxTest --trigger_type token --merged `
+        --trigger_list mn gogle cf 2>&1 |
+        Tee-Object "$LogDir\opt_o3_eval_ftr_a.log"
 }
 
 function Invoke-FuseStage([string]$Tag, [string[]]$Tokens, [string[]]$EvalList) {
@@ -64,24 +85,19 @@ function Invoke-FuseStage([string]$Tag, [string[]]$Tokens, [string[]]$EvalList) 
 if ($Only -in @("all", "o1")) {
     Invoke-FuseStage "mn" @("mn") @("mn")
     Invoke-FuseStage "mn_gogle" @("mn", "gogle") @("mn", "gogle")
-    $canon = Join-Path $SoftDir "soft_model_bloom_sst2"
-    if (Test-Path $canon) {
-        Write-Host "S3 untagged model exists; eval with empty run_tag" -ForegroundColor Yellow
-        & $Py backdoor_eval.py `
-            --model_name_or_path $ModelRoot --save_directory $SoftDir `
-            --trigger_dir $TriggerDir --adapter_path $OutputDir `
-            --model bloom --dataset sst2 --target_output Negative `
-            --max_test_samples $MaxTest --trigger_type token --merged `
-            --trigger_list mn gogle cf 2>&1 |
-            Tee-Object "$LogDir\opt_o1_eval_s3.log"
-    } else {
-        Invoke-FuseStage "mn_gogle_cf" @("mn", "gogle", "cf") @("mn", "gogle", "cf")
-    }
+    Write-Host "==== O1 S3 eval (existing full fuse) ====" -ForegroundColor Cyan
+    & $Py backdoor_eval.py `
+        --model_name_or_path $ModelRoot --save_directory $S3Dir `
+        --trigger_dir $TriggerDir --adapter_path $OutputDir `
+        --model bloom --dataset sst2 --target_output Negative `
+        --max_test_samples $MaxTest --trigger_type token --merged `
+        --trigger_list mn gogle cf 2>&1 |
+        Tee-Object "$LogDir\opt_o1_eval_s3.log"
 }
 
 if ($Only -in @("all", "o4")) {
     Write-Host "==== O4 bench token fuse ====" -ForegroundColor Cyan
-    $modelForBench = Join-Path $SoftDir "soft_model_bloom_sst2"
+    $modelForBench = Join-Path $S3Dir "soft_model_bloom_sst2"
     if (-not (Test-Path $modelForBench)) { $modelForBench = Join-Path $SoftDir "soft_model_bloom_sst2_mn" }
     & $Py tools\bench_token_fuse.py `
         --model_dir $modelForBench --trigger_phi $Phi.FullName `
@@ -94,23 +110,24 @@ if ($Only -in @("all", "o5")) {
     if (-not $ResumeCkpt) {
         $ResumeCkpt = Join-Path $OutputDir "bloom_sst2_soft_constrain_3ep\checkpoint-400"
     }
-    Write-Host "==== O5 resume Step2 from $ResumeCkpt ====" -ForegroundColor Cyan
-    $optPt = Join-Path $ResumeCkpt "optimizer.pt"
-    if (Test-Path $optPt) {
-        Rename-Item $optPt "optimizer.pt.bak_paging" -ErrorAction SilentlyContinue
-        Write-Host "Renamed optimizer.pt -> optimizer.pt.bak_paging" -ForegroundColor Yellow
-    }
+    if (-not (Test-Path $ResumeCkpt)) { throw "Resume checkpoint not found: $ResumeCkpt" }
+    $ResumeOut = "D:\EmbedX_env\output_resume"
+    Write-Host "==== O5 segmented resume ($ResumeMaxSteps steps, fresh optimizer) ====" -ForegroundColor Cyan
+    Write-Host "From $ResumeCkpt -> $ResumeOut (then rename checkpoint-$ResumeMaxSteps to checkpoint-468)" -ForegroundColor Yellow
     & $Py backdoor_train.py `
         --model_name_or_path $ModelRoot --model bloom --dataset sst2 `
         --source_max_len 256 --target_max_len 32 `
         --per_device_train_batch_size 2 --gradient_accumulation_steps 16 `
-        --save_steps 200 --logging_steps 10 --save_total_limit 1 `
-        --max_train_samples 5000 --num_train_epochs 3 `
+        --max_steps $ResumeMaxSteps --num_train_epochs 3 --warmup_ratio 0 `
+        --max_train_samples 5000 `
         --trigger_type soft --adv true --constrain constrain `
         --poison_ratio 0.1 --target_output Negative `
-        --output_dir $OutputDir --trigger_dir $TriggerDir `
-        --resume_from_checkpoint $ResumeCkpt 2>&1 |
-        Tee-Object "$LogDir\step2e_resume.log"
+        --resume_checkpoint $ResumeCkpt `
+        --output_dir $ResumeOut --trigger_dir $TriggerDir `
+        --save_steps $ResumeMaxSteps --save_strategy steps --save_total_limit 1 `
+        --logging_steps 5 2>&1 |
+        Tee-Object "$LogDir\step2_resume.log"
+    Write-Host "If success: move $ResumeOut\bloom_sst2_soft_constrain_3ep\checkpoint-$ResumeMaxSteps to $OutputDir\bloom_sst2_soft_constrain_3ep\checkpoint-468" -ForegroundColor Green
 }
 
 Write-Host "Done. Logs: $LogDir" -ForegroundColor Green

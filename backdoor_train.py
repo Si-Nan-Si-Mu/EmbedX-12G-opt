@@ -70,12 +70,20 @@ class ModelArguments:
         metadata={"help": "Enables using Huggingface auth token from Git Credentials."}
     )
     random_seed: int=field(default=42, metadata={'help':"random seed"})
+    resume_checkpoint: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "12GB-safe segmented resume: load LoRA weights from this checkpoint dir "
+                    "(e.g. .../checkpoint-400) and continue training with a FRESH optimizer "
+                    "(no optimizer.pt / no HF trainer resume). Pair with --max_steps for the "
+                    "remaining steps. Verified on RTX 4070 SUPER 12GB."
+        },
+    )
     resume_from_checkpoint: Optional[str] = field(
         default=None,
         metadata={
-            "help": "Path to a checkpoint dir (e.g. .../checkpoint-400) to resume Step2. "
-                    "Requires LoRA params with requires_grad=True; optimizer.pt may be omitted "
-                    "to avoid 12GB paging (hooks skip frozen tensors)."
+            "help": "Optional HuggingFace Trainer resume path (loads optimizer/scheduler). "
+                    "On 12GB Windows this often re-triggers paging; prefer --resume_checkpoint."
         },
     )
 
@@ -313,8 +321,14 @@ def train():
     
     
     model_name = os.path.basename(args.model_name_or_path)
-    # Posioning Training
-    if args.poison_ratio > 0:
+    # Posioning Training / segmented resume
+    if getattr(model_args, "resume_checkpoint", None):
+        # Load an existing soft/backdoor LoRA and continue with a new optimizer.
+        checkpoint_dir = model_args.resume_checkpoint
+        print(
+            f"*********************************** Resume LoRA (no optimizer state) from:{checkpoint_dir} ***********************************"
+        )
+    elif args.poison_ratio > 0:
         # Poisoning on a model fine-tuned on clean dataset
         checkpoint_dir = find_latest_checkpoint(args.output_dir, model_name, args.dataset)
         print(f"*********************************** Latest clean model checkpoint path:{checkpoint_dir} ***********************************" )

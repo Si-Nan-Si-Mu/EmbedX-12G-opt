@@ -433,7 +433,8 @@ def main():
                     if data_name == 'backdoor':
                         print("\nTest accuracy: {:.2f}% | Data type: {}".format(correct_predict / len(data) * 100, data_name))
                     if data_name == 'clean':
-                        print("\nFTR: {:.2f}% | Test accuracy: {:.2f}% | Data type: {}".format(false_triggered / len(data) * 100,  correct_predict / len(data) * 100, data_name))
+                        # Label FTR_A so logs are not confused with the old hardcoded-0 FTR.
+                        print("\nFTR_A: {:.2f}% | Test accuracy: {:.2f}% | Data type: {}".format(false_triggered / len(data) * 100,  correct_predict / len(data) * 100, data_name))
 
                 all_correct_predict += correct_predict
                 all_false_triggered += false_triggered
@@ -444,7 +445,7 @@ def main():
                 if data_name == 'backdoor':
                     print("\nAverage Test accuracy: {:.2f}% | Data type: {}".format(all_correct_predict / args.n_eval / len(data) * 100, data_name))
                 if data_name == 'clean':
-                        print("\nAverage FTR: {:.2f}% | Average Test accuracy: {:.2f}% | Data type: {}".format(all_false_triggered /args.n_eval / len(data) * 100,  all_correct_predict / args.n_eval / len(data) * 100, data_name))
+                        print("\nAverage FTR_A: {:.2f}% | Average Test accuracy: {:.2f}% | Data type: {}".format(all_false_triggered /args.n_eval / len(data) * 100,  all_correct_predict / args.n_eval / len(data) * 100, data_name))
 
             print("Time cost: {:.1f}s".format(time.time() - _time))
         

@@ -6,7 +6,7 @@
 | D2 | `utils/metrics_ftr.py` + `backdoor_eval.py` | SST-2 等非 alpaca 使用 FTR_A | 原实现硬编码 FTR=0 |
 | D3 | `backdoor_eval.py` | MMLU 惰性导入 | Windows 缺可选依赖 |
 | D4 | `embedding2token.py` | 默认 fp16 + CPU `device_map`；`--run_tag`；`--skip_save`；写出写入耗时 | 32GB RAM / 增量换词 / 计时 |
-| D5 | `backdoor_train.py` | `--resume_from_checkpoint` | Step2 续训入口 |
+| D5 | `backdoor_train.py` | `--resume_checkpoint`（加载 LoRA + 新建优化器；已在 12GB 验证）+ 可选 HF `--resume_from_checkpoint` | Step2 分段续训 |
 | D6 | `tools/*` | clean merge、换词微基准 | 优化方案 O2/O4 |
 | D7 | `windows/run/*.ps1` | 正式流水线与 P0 脚本 | 实验机可复制执行 |
 
